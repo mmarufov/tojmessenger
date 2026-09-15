@@ -13,6 +13,7 @@ import { presenceSchemaReadiness } from "./presence";
 import { profilePhotosSchemaReadiness } from "./profile-photos";
 import { cleanupAbuseReports } from "./reports";
 import { EXPIRED_BLIND_INDEX_KEY_ID } from "./blind-index";
+import { otpSchemaReadiness } from "./auth";
 import { expireAcceptedMessages, expiredMessageBacklog } from "./message-expiry";
 import { cleanupMessagingFeatureReceipts } from "./messaging-features";
 import { messagingFeatureSchemaState } from "./messaging-feature-readiness";
@@ -379,6 +380,7 @@ export async function readiness(sql: SQL, providers: { sms: ProviderState; push:
   const draftMedia = await draftMediaSchemaState(sql, { bypassCache: true });
   const groupCallSchema = await groupCallSchemaReadiness(sql, { bypassCache: true });
   const presence = await presenceSchemaReadiness(sql);
+  const otpSchema = await otpSchemaReadiness(sql);
   const profilePhotos = await profilePhotosSchemaReadiness(sql);
   const messagingFeatures = await messagingFeatureSchemaState(sql, { bypassCache: true });
   const cloudProductivity = await cloudProductivitySchemaState(sql, { bypassCache: true });
@@ -436,6 +438,11 @@ export async function readiness(sql: SQL, providers: { sms: ProviderState; push:
     // points are dark, so this is an unconditional binary/schema admission contract.
     profilePhotos: profilePhotos.ready ? "ready" : "incomplete",
     authSecuritySchema: authSecurityReady ? "ready" : "incomplete",
+    // A deploy carrying a schema change starts clean and only fails on the first request
+    // that touches the new column, because `bun run staging` does not migrate. Surface the
+    // drift here so /ready cannot report healthy while OTP is broken.
+    otpSchema: otpSchema.ready ? "ready" : "incomplete",
+    ...(otpSchema.ready ? {} : { otpSchemaMissing: otpSchema.missing }),
     messagingFeatures,
     cloudProductivity,
     groupCalls: {

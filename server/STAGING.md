@@ -87,6 +87,24 @@ fails closed before storing an OTP. Returned test OTPs are not proof of phone ow
 knows an allowlisted number could use this testing login. Use synthetic test identities and disposable
 content, never real private conversations. Real SMS and stronger private access are launch work.
 
+## Deploying a revision that changes the schema
+
+**`bun run staging` does not run migrations.** It starts the server and nothing else. A deploy
+carrying a schema change therefore boots cleanly, answers `/ready`, and fails on the first request
+that touches the new column — which is exactly what happened with `otp_challenges.channel` in #46.
+
+So, for any revision whose diff touches `server/src/schema.sql`:
+
+1. Deploy the revision.
+2. Run the migration against the same database, with the CA loaded first:
+   `NODE_EXTRA_CA_CERTS=./certs/supabase-root-2021.crt DATABASE_URL=<staging URL> bun run migrate`
+3. Re-check `/ready` and confirm every `*Schema` field reads `ready`.
+
+`/ready` now reports `otpSchema`, and lists the missing objects in `otpSchemaMissing` when it does
+not. Nine other subsystems already reported schema readiness; OTP was the gap that let a green
+`/ready` coexist with broken logins. **Treat any `incomplete` schema field as "the migration has
+not been run", not as a code fault.**
+
 ## Optional private Telegram OTP pilot
 
 Implemented for **staging login and two-step enrollment only**; token presence alone does not

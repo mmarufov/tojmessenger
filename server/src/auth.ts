@@ -109,6 +109,35 @@ function hostedAuthentication(): boolean {
  * gap between "more than one channel can be configured" and "the caller must name which one" is
  * precisely the silent substitution the interlock prevented. They ship as one change, never two.
  */
+/**
+ * Whether the OTP tables match what this build writes.
+ *
+ * `bun run staging` does not run migrations — they are a separate, deliberate `bun run migrate`.
+ * So a deploy carrying a schema change starts cleanly, answers /ready 200, and then fails on the
+ * first request that touches the new column. That happened with the `channel` column in #46: the
+ * service looked healthy and every OTP request would have failed.
+ *
+ * Nine other subsystems already report schema readiness here; OTP simply was not among them. A
+ * green /ready must mean the schema matches the code, or it is a signal that reassures without
+ * checking — which is worse than no signal at all.
+ */
+export async function otpSchemaReadiness(sql: SQL): Promise<{ ready: boolean; missing: string[] }> {
+  const missing: string[] = [];
+  const row = (await sql`
+    SELECT
+      to_regclass('public.otp_challenges') IS NOT NULL AS otp_challenges,
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'otp_challenges' AND column_name = 'channel'
+      ) AS otp_challenges_channel,
+      to_regclass('public.security_step_up_tickets') IS NOT NULL AS security_step_up_tickets,
+      to_regclass('public.account_two_factor') IS NOT NULL AS account_two_factor`)[0];
+  for (const [name, present] of Object.entries(row ?? {})) {
+    if (!present) missing.push(name);
+  }
+  return { ready: missing.length === 0, missing };
+}
+
 export function otpDeliveryRegistryFromEnvironment(): OTPDeliveryRegistry {
   const registry = new Map<OTPChannel, OTPDelivery>();
 

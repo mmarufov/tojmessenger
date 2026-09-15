@@ -7,7 +7,7 @@ services:
     plan: 0.5c-512mb
     region: frankfurt
     numInstances: 1
-    branch: mmarufov/tajikistan-servers
+    branch: main
     rootDir: server
     buildCommand: bun install --frozen-lockfile
     startCommand: bun run staging

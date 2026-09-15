@@ -1230,6 +1230,30 @@ describe("M3 cloud sync", () => {
     }
   });
 
+  test("readiness reports OTP schema drift instead of claiming healthy", async () => {
+    const server = startCloudServer(0, db, null, null, { backgroundWorkers: false });
+    try {
+      const base = `http://127.0.0.1:${server.port}`;
+      const healthy = await (await fetch(`${base}/ready`)).json() as any;
+      expect(healthy.otpSchema).toBe("ready");
+      expect(healthy.otpSchemaMissing).toBeUndefined();
+
+      // `bun run staging` does not migrate, so a deploy carrying a schema change boots clean and
+      // fails on the first request touching the new column. That happened for real with #46's
+      // `channel` column. Readiness must see it rather than reassure.
+      await db`ALTER TABLE otp_challenges DROP COLUMN channel`;
+      try {
+        const drifted = await (await fetch(`${base}/ready`)).json() as any;
+        expect(drifted.otpSchema).toBe("incomplete");
+        expect(drifted.otpSchemaMissing).toContain("otp_challenges_channel");
+      } finally {
+        await db`ALTER TABLE otp_challenges ADD COLUMN IF NOT EXISTS channel TEXT`;
+      }
+    } finally {
+      await server.stop(true);
+    }
+  });
+
   test("failed OTP delivery consumes the unusable challenge", async () => {
     let error: unknown;
     const originalConsoleError = console.error;
